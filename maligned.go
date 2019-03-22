@@ -109,6 +109,12 @@ func (s *byAlignAndSize) Less(i, j int) bool {
 	if s.alignofs[i] != s.alignofs[j] {
 		return s.alignofs[i] > s.alignofs[j]
 	}
+	
+	// Next, attempt to place fields that GC has to scan at the beginning of the struct
+	// so that GC can skip the tail of the struct (see #6).
+	if iP, jP := gcPriority(s.fields[i]), gcPriority(s.fields[j]); iP != jP {
+		return iP > jP
+	}
 
 	// Lastly, order by size.
 	if s.sizeofs[i] != s.sizeofs[j] {
@@ -116,6 +122,25 @@ func (s *byAlignAndSize) Less(i, j int) bool {
 	}
 
 	return false
+}
+
+func gcPriority(v *types.Var) int {
+	switch t := v.Type().Underlying().(type) {
+	case default:
+		return 0
+	case *types.Array:
+		// TODO: 0 if the array recursively contains no pointers/interfaces/slices
+		return 1
+	case *types.Struct:
+		// TODO: 0 if the struct recursively contains no pointers/interfaces/slices
+		return 2
+	case *types.Slice:
+		return 3
+	case *types.Interface:
+		return 3
+	case *types.Pointer:
+		return 3
+	}
 }
 
 // Code below based on go/types.StdSizes.
