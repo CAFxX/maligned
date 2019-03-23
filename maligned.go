@@ -112,7 +112,7 @@ func (s *byAlignAndSize) Less(i, j int) bool {
 	
 	// Next, attempt to place fields that GC has to scan at the beginning of the struct
 	// so that GC can skip the tail of the struct (see #6).
-	if iP, jP := gcPriority(s.fields[i]), gcPriority(s.fields[j]); iP != jP {
+	if iP, jP := gcPriority(s.fields[i].Type()), gcPriority(s.fields[j].Type()); iP != jP {
 		return iP > jP
 	}
 
@@ -124,22 +124,32 @@ func (s *byAlignAndSize) Less(i, j int) bool {
 	return false
 }
 
-func gcPriority(v *types.Var) int {
-	switch t := v.Type().Underlying().(type) {
-	case default:
+func gcPriority(T types.Type) int {
+	switch t := T.Underlying().(type) {
+	default:
 		return 0
+	case *types.Basic:
+		switch t.Kind() {
+		case types.String, types.UnsafePointer:
+			return 2
+		default:
+			return 0
+		}
 	case *types.Array:
-		// TODO: 0 if the array recursively contains no pointers/interfaces/slices
-		return 1
+		return gcPriority(t.Elem())
 	case *types.Struct:
-		// TODO: 0 if the struct recursively contains no pointers/interfaces/slices
-		return 2
+		for i := 0; i<t.NumFields(); i++ {
+			if gcPriority(t.Field(i).Type()) > 0 {
+				return 1
+			}
+		}
+		return 0
 	case *types.Slice:
-		return 3
+		return 2
 	case *types.Interface:
-		return 3
+		return 2
 	case *types.Pointer:
-		return 3
+		return 2
 	}
 }
 
